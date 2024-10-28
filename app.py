@@ -111,7 +111,7 @@ def get_recommendations():
 def index():
     recommendations = []
     if request.method == "POST":
-        user_id = request.form.get("user_id")
+        user_id = int(request.form.get("user_id"))
         recommendations = recommend_movies(user_id)
     return render_template("index.html", recommendations=recommendations)
 
