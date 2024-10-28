@@ -1,40 +1,54 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS  # Importar CORS
 import polars as pl
 
 app = Flask(__name__)
 CORS(app)  # Habilitar CORS para todas las rutas
 
-# Reemplazar '::' por ',' en los archivos
-with open('ml-1m/ratings.dat', 'r', encoding='ISO-8859-1') as f:
-    ratings_data = f.read().replace('::', ',')
+# Variables globales para los DataFrames
+ratings = None
+movies = None
+users = None
 
-with open('ml-1m/movies.dat', 'r', encoding='ISO-8859-1') as f:
-    movies_data = f.read().replace('::', ',')
+# Cargar los datos en memoria una vez al iniciar la aplicación
+def load_data():
+    global ratings, movies, users
+    
+    # Reemplazar '::' por ',' en los archivos
+    with open('ml-1m/ratings.dat', 'r', encoding='ISO-8859-1') as f:
+        ratings_data = f.read().replace('::', ',')
+    
+    with open('ml-1m/movies.dat', 'r', encoding='ISO-8859-1') as f:
+        movies_data = f.read().replace('::', ',')
+    
+    with open('ml-1m/users.dat', 'r', encoding='ISO-8859-1') as f:
+        users_data = f.read().replace('::', ',')
+    
+    # Guardar los archivos modificados temporalmente
+    with open('ml-1m/ratings_cleaned.csv', 'w', encoding='ISO-8859-1') as f:
+        f.write(ratings_data)
 
-with open('ml-1m/users.dat', 'r', encoding='ISO-8859-1') as f:
-    users_data = f.read().replace('::', ',')
+    with open('ml-1m/movies_cleaned.csv', 'w', encoding='ISO-8859-1') as f:
+        f.write(movies_data)
 
-# Guardar los archivos modificados temporalmente
-with open('ml-1m/ratings_cleaned.csv', 'w', encoding='ISO-8859-1') as f:
-    f.write(ratings_data)
+    with open('ml-1m/users_cleaned.csv', 'w', encoding='ISO-8859-1') as f:
+        f.write(users_data)
 
-with open('ml-1m/movies_cleaned.csv', 'w', encoding='ISO-8859-1') as f:
-    f.write(movies_data)
+    # Cargar los datos con Polars utilizando ',' como separator y codificación ISO-8859-1
+    ratings = pl.read_csv('ml-1m/ratings_cleaned.csv', separator=',', has_header=False, 
+                          new_columns=['UserID', 'MovieID', 'Rating', 'Timestamp'], encoding='ISO-8859-1',
+                          truncate_ragged_lines=True, ignore_errors=True)
+    
+    movies = pl.read_csv('ml-1m/movies_cleaned.csv', separator=',', has_header=False, 
+                         new_columns=['MovieID', 'Title', 'Genres'], encoding='ISO-8859-1',
+                         truncate_ragged_lines=True, ignore_errors=True)
+    
+    users = pl.read_csv('ml-1m/users_cleaned.csv', separator=',', has_header=False, 
+                        new_columns=['UserID', 'Gender', 'Age', 'Occupation', 'Zip-code'], encoding='ISO-8859-1',
+                        truncate_ragged_lines=True, ignore_errors=True)
 
-with open('ml-1m/users_cleaned.csv', 'w', encoding='ISO-8859-1') as f:
-    f.write(users_data)
-
-# Cargar los datos con Polars utilizando ',' como separator y codificación ISO-8859-1
-ratings = pl.read_csv('ml-1m/ratings_cleaned.csv', separator=',', has_header=False, 
-                      new_columns=['UserID', 'MovieID', 'Rating', 'Timestamp'], encoding='ISO-8859-1',
-                      truncate_ragged_lines=True, ignore_errors=True)
-movies = pl.read_csv('ml-1m/movies_cleaned.csv', separator=',', has_header=False, 
-                     new_columns=['MovieID', 'Title', 'Genres'], encoding='ISO-8859-1',
-                     truncate_ragged_lines=True, ignore_errors=True)
-users = pl.read_csv('ml-1m/users_cleaned.csv', separator=',', has_header=False, 
-                    new_columns=['UserID', 'Gender', 'Age', 'Occupation', 'Zip-code'], encoding='ISO-8859-1',
-                    truncate_ragged_lines=True, ignore_errors=True)
+# Llamar a la función para cargar los datos al iniciar la aplicación
+load_data()
 
 # Implementación de la distancia Manhattan
 def manhattan_distance(user1_ratings, user2_ratings):
@@ -92,6 +106,14 @@ def get_recommendations():
         'user_id': user_id,
         'recommendations': recommendations
     })
+
+@app.route("/", methods=["GET", "POST"])
+def index():
+    recommendations = []
+    if request.method == "POST":
+        user_id = request.form.get("user_id")
+        recommendations = recommend_movies(user_id)
+    return render_template("index.html", recommendations=recommendations)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', debug=True)
